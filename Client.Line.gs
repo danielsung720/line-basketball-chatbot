@@ -44,36 +44,47 @@ const LineClient = {
   },
 
   getGroupMemberProfile: (groupId, userId) => {
-    const url = LINE_GROUP_MEMBER_PROFILE_API_URL
-      .replace('{groupId}', encodeURIComponent(groupId))
-      .replace('{userId}', encodeURIComponent(userId));
+    // 任何網路或解析例外都回退為以 userId 當顯示名稱,絕不 throw,
+    // 避免單一成員抓取失敗中斷整份統計。
+    try {
+      const url = LINE_GROUP_MEMBER_PROFILE_API_URL
+        .replace('{groupId}', encodeURIComponent(groupId))
+        .replace('{userId}', encodeURIComponent(userId));
 
-    const response = UrlFetchApp.fetch(url, {
-      method: 'get',
-      headers: {
-        Authorization: `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`,
-      },
-      muteHttpExceptions: true,
-    });
+      const response = UrlFetchApp.fetch(url, {
+        method: 'get',
+        headers: {
+          Authorization: `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`,
+        },
+        muteHttpExceptions: true,
+      });
 
-    const statusCode = response.getResponseCode();
-    const body = response.getContentText();
+      const statusCode = response.getResponseCode();
+      const body = response.getContentText();
 
-    if (statusCode !== 200) {
-      Logger.log(`取得 LINE profile 失敗：${statusCode} ${body}`);
+      if (statusCode !== 200) {
+        Logger.log(`取得 LINE profile 失敗：${statusCode} ${body}`);
+
+        return {
+          userId,
+          displayName: userId,
+        };
+      }
+
+      const profile = JSON.parse(body);
+
+      return {
+        userId,
+        displayName: profile.displayName || userId,
+        pictureUrl: profile.pictureUrl || null,
+      };
+    } catch (err) {
+      Logger.log(`取得 LINE profile 發生例外(${userId}):${err.message}`);
 
       return {
         userId,
         displayName: userId,
       };
     }
-
-    const profile = JSON.parse(body);
-
-    return {
-      userId,
-      displayName: profile.displayName || userId,
-      pictureUrl: profile.pictureUrl || null,
-    };
   },
 };

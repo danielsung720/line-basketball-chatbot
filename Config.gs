@@ -39,3 +39,6 @@ var LINE_WEBHOOK_TOKEN = Config.get('LINE_WEBHOOK_TOKEN', '');
 
 var MESSAGE_TYPE_GEMINI = 'Gemini';
 var MESSAGE_TYPE_LINE = 'Line';
+
+// 無法取得 LINE 顯示名稱時,統計清單改用的佔位字串
+var UNKNOWN_MEMBER_DISPLAY_NAME = '未知成員';

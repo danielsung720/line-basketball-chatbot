@@ -20,11 +20,23 @@ const SignupService = {
 
       if (count > 0) {
         const groupId = result.userGroups[userId] || LINE_GROUP_ID;
-        const profile = MemberService.getMemberProfile(userId, groupId);
+        let displayName = UNKNOWN_MEMBER_DISPLAY_NAME;
+
+        try {
+          const profile = MemberService.getMemberProfile(userId, groupId);
+
+          // 抓取失敗時 displayName 會退化成 userId(sentinel),此時維持佔位字串。
+          if (profile.displayName && profile.displayName !== userId) {
+            displayName = profile.displayName;
+          }
+        } catch (err) {
+          // 單一成員解析失敗不應中斷整份統計,維持佔位字串顯示。
+          Logger.log(`取得成員資料失敗,改用佔位名稱顯示(${userId}):${err.message}`);
+        }
 
         attendees.push({
           userId,
-          displayName: profile.displayName,
+          displayName,
           count,
         });
       }
