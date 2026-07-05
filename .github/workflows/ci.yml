@@ -16,13 +16,14 @@ jobs:
         with:
           node-version: 20
 
-      # .gs 本質是 JS,用 node --check 做語法檢查(不執行、只 parse)
+      # .gs 本質是 JS。新版 Node 的 `node --check` 不認得 .gs 副檔名,
+      # 改用 vm.Script 只編譯不執行來檢查語法。
       - name: Check .gs syntax
         run: |
           set -e
           for f in *.gs; do
             echo "Checking $f"
-            node --check "$f"
+            node -e "new (require('vm').Script)(require('fs').readFileSync(process.argv[1],'utf8'), {filename: process.argv[1]})" "$f"
           done
 
       - name: Validate appsscript.json

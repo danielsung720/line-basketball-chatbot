@@ -34,6 +34,8 @@ var LINE_GROUP_MEMBER_PROFILE_API_URL = Config.get(
   'https://api.line.me/v2/bot/group/{groupId}/member/{userId}'
 );
 var LINE_GROUP_ID = Config.get('LINE_GROUP_ID');
+// Webhook 驗證用的不可猜 token(掛在 /exec?token=... );未設定則一律拒絕請求
+var LINE_WEBHOOK_TOKEN = Config.get('LINE_WEBHOOK_TOKEN', '');
 
 var MESSAGE_TYPE_GEMINI = 'Gemini';
 var MESSAGE_TYPE_LINE = 'Line';

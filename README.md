@@ -22,7 +22,22 @@ LINE_CHANNEL_ACCESS_TOKEN=
 LINE_PUSH_API_URL=https://api.line.me/v2/bot/message/push
 LINE_GROUP_MEMBER_PROFILE_API_URL=https://api.line.me/v2/bot/group/{groupId}/member/{userId}
 LINE_GROUP_ID=
+LINE_WEBHOOK_TOKEN=
 ```
+
+## Webhook Security
+
+Apps Script `doPost(e)` cannot read HTTP headers, so LINE's `X-Line-Signature`
+cannot be verified. Instead the webhook is gated by an unguessable token passed
+as a query parameter — requests without the correct token are rejected before
+any processing (fail closed).
+
+1. Generate a random token, e.g. `openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`.
+2. Save it as the `LINE_WEBHOOK_TOKEN` Script Property.
+3. Set the LINE Developers webhook URL to include it:
+   `https://script.google.com/macros/s/XXXX/exec?token=<LINE_WEBHOOK_TOKEN>`
+
+If `LINE_WEBHOOK_TOKEN` is unset, **all** webhook requests are rejected.
 
 ## Google Apps Script Setup
 

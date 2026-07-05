@@ -1,5 +1,11 @@
 const LineWebhookService = {
   handlePost: (e) => {
+    // GAS 的 doPost 無法讀取 HTTP header,無法驗證 X-Line-Signature。
+    // 改以不可猜的 query token 當作驗證閘門,不符即丟棄(fail closed)。
+    if (!LineWebhookService.isAuthorized(e)) {
+      return ContentService.createTextOutput('Unauthorized');
+    }
+
     let groupId = '-';
     let userId = '-';
 
@@ -33,5 +39,35 @@ const LineWebhookService = {
     return event.type === 'message' &&
       event.message &&
       event.message.type === 'text';
+  },
+
+  /**
+   * 驗證請求是否帶有正確的 webhook token。
+   * token 未設定時一律拒絕(fail closed),避免設定遺漏造成端點裸奔。
+   */
+  isAuthorized: (e) => {
+    const expected = LINE_WEBHOOK_TOKEN;
+
+    if (!expected) {
+      return false;
+    }
+
+    const provided = (e && e.parameter && e.parameter.token) || '';
+
+    return LineWebhookService.safeEqual(String(provided), String(expected));
+  },
+
+  // 常數時間字串比較,避免以回應時間差推測 token。
+  safeEqual: (a, b) => {
+    if (a.length !== b.length) {
+      return false;
+    }
+
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) {
+      diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    }
+
+    return diff === 0;
   },
 };
