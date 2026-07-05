@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # .gs 本質是 JS,用 node --check 做語法檢查(不執行、只 parse)
+      - name: Check .gs syntax
+        run: |
+          set -e
+          for f in *.gs; do
+            echo "Checking $f"
+            node --check "$f"
+          done
+
+      - name: Validate appsscript.json
+        run: node -e "JSON.parse(require('fs').readFileSync('appsscript.json','utf8'))"

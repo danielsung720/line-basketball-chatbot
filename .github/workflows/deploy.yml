@@ -1,0 +1,49 @@
+name: Deploy to Apps Script
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# 同一時間只允許一個部署,避免同時 clasp push 造成衝突
+concurrency:
+  group: clasp-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install clasp
+        # 對齊本機 clasp v3 憑證格式 (~/.clasprc.json 為 { "tokens": { "default": ... } })
+        run: npm install -g @google/clasp@3.3.0
+
+      - name: Authenticate clasp
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+
+      - name: Generate .clasp.json
+        env:
+          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+        run: |
+          cat > .clasp.json <<EOF
+          {
+            "scriptId": "${SCRIPT_ID}",
+            "rootDir": "",
+            "scriptExtensions": [".gs"],
+            "htmlExtensions": [".html"],
+            "jsonExtensions": [".json"]
+          }
+          EOF
+
+      - name: Push to Apps Script
+        run: clasp push --force

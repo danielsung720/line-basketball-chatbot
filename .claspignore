@@ -1,0 +1,5 @@
+# 只推送 .gs 與 appsscript.json 到 Apps Script,其餘一律忽略
+**/**
+
+!*.gs
+!appsscript.json
