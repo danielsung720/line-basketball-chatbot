@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+
+.DS_Store
+node_modules/
+
+# clasp 個人/環境設定,含綁定的 scriptId,不應共用
+.clasp.json
+
+docs/
