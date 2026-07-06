@@ -1,4 +1,4 @@
-# ADDCN Basketball Chatbot
+# LINE Basketball Chatbot
 
 Google Apps Script LINE bot for basketball signup reminders and statistics.
 
