@@ -10,41 +10,18 @@
 // 注意:GAS ContentService 一律回應 HTTP 200 且無法自訂 header,
 // 因此成功/失敗以回應內容的 ok 欄位表達,而非 HTTP 狀態碼。
 const StatsApiService = {
-  // 讀取仍有 GAS 平台開銷(冷啟動 + 轉址 + 開表),故仍快取;報名異動會即時清快取
-  // (見 SignupStateService.recordEvents),所以名單既快又不會過期。TTL 只是保底。
-  CACHE_TTL_SECONDS: 30,
-  CACHE_PREFIX: 'stats:',
-
   handleGet: (e) => {
     try {
       const options = StatsApiService.parseOptions(e);
       const gameKey = GamePolicy.gameKeyForDate(StatsApiService.resolveAnchor(options));
-      const cache = CacheService.getScriptCache();
-      const cacheKey = StatsApiService.cacheKeyForGame(gameKey);
 
-      const cached = cache.get(cacheKey);
-      if (cached) {
-        return StatsApiService.respond(e, { ok: true, data: JSON.parse(cached) });
-      }
-
-      // 直接讀即時聚合狀態(SignupState),不再掃描 ReceiveLog。
+      // 每次即時從 SignupState 聚合,不做快取。
       const body = SignupStateService.getSummary(gameKey);
-
-      cache.put(cacheKey, JSON.stringify(body), StatsApiService.CACHE_TTL_SECONDS);
 
       return StatsApiService.respond(e, { ok: true, data: body });
     } catch (err) {
       return StatsApiService.respond(e, { ok: false, error: err.message });
     }
-  },
-
-  cacheKeyForGame: (gameKey) => {
-    return StatsApiService.CACHE_PREFIX + gameKey;
-  },
-
-  // 報名異動時清掉該場快取,讓下次讀取立即反映。
-  invalidate: (gameKey) => {
-    CacheService.getScriptCache().remove(StatsApiService.cacheKeyForGame(gameKey));
   },
 
   // 決定要看「哪一場」的時間錨點:優先 startTime,其次 now,否則現在。

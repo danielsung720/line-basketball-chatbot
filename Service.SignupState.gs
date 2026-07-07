@@ -44,10 +44,7 @@ const SignupStateService = {
         return;
       }
 
-      const affectedGameKeys = SignupStateRepository.appendActions(actions);
-
-      // 有異動的場次清快取,讓下次讀取立即反映。
-      affectedGameKeys.forEach(gameKey => StatsApiService.invalidate(gameKey));
+      SignupStateRepository.appendActions(actions);
     } catch (err) {
       Logger.log('更新 SignupState 失敗: ' + err.message);
     }
