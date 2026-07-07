@@ -1,8 +1,9 @@
-// SignupState 分頁:每一場球、每位使用者的目前報名人數(即時聚合狀態)。
-// 欄位:game_key | user_id | count | display_name | updated_at
-//   updated_at 存「該筆勝出點擊的 LINE 事件時間」,用來做「最後點擊為準」的比較。
-// 以 (game_key, user_id) 為唯一鍵:寫入用 LockService 序列化 + 事件時間戳守衛,
-// 讀取對任何殘留重複列取最新者,確保結果正確。
+// SignupState 分頁:報名點擊的「事件列」(append-only)。
+// 欄位:game_key | user_id | count | display_name | updated_at(該事件的 LINE 事件時間)
+//
+// 設計:寫入只做 append(每個點擊記一列),保證併發下資料不遺失、也不需讀-改-寫,
+//       徹底避開 GAS 跨執行緒 read-after-write 造成的重複/漏寫 race condition。
+//       「同一人同一場的目前人數」由讀取端聚合:取該人事件時間最新的那一列(最後點擊為準)。
 const SignupStateRepository = {
   stateCache: null,
 
@@ -66,7 +67,7 @@ const SignupStateRepository = {
         rowNumber: index + 2,
       };
 
-      // 若同一鍵有殘留重複列(過去併發造成),保留 updated_at 最新的那筆。
+      // 聚合:同一人同一場有多列事件時,保留 updated_at(事件時間)最新的那筆 = 最後點擊。
       const existing = cache[key];
       if (!existing || SignupStateRepository.toMs(record.updatedAt) >= SignupStateRepository.toMs(existing.updatedAt)) {
         cache[key] = record;
@@ -78,14 +79,13 @@ const SignupStateRepository = {
     return cache;
   },
 
-  // 批次套用一組報名動作(來自同一個 webhook request 的多筆事件),
-  // 一次鎖、一次讀、記憶體內合併後再寫入,解決:
-  //   1. 同一次執行連續處理一批事件時,append 後同執行緒重讀讀不到 → 重複列;
-  //   2. 跨 request 併發 → 用 LockService 序列化;
-  //   3. 順序錯亂 → 以事件時間戳守衛,同一人只保留最新點擊。
+  // 純 append:每個報名動作各寫一列,不做讀-改-寫、不合併、不覆蓋。
+  //   → 併發下不會遺失、也不會因 read-after-write 讀不到而重複判斷;每一列都是合法事件紀錄。
+  //   聚合(同一人取最新點擊)交給讀取端 getCache/findByGameKey 處理。
+  // 用一把鎖包住整批寫入,僅為確保多執行緒同時 append 時不互相覆蓋(不做任何讀取)。
   // actions: [{ gameKey, userId, count, displayName, eventTime }]
   // 回傳:受影響的 gameKey 陣列(供清快取)。
-  applyBatch: (actions) => {
+  appendActions: (actions) => {
     if (!actions || actions.length === 0) {
       return [];
     }
@@ -94,51 +94,24 @@ const SignupStateRepository = {
     lock.waitLock(SignupStateRepository.LOCK_WAIT_MS);
 
     try {
-      // 進鎖後讀一次(強制重讀以看到其他執行緒剛寫入的列),之後同執行緒只靠記憶體 cache。
+      const sheet = SignupStateRepository.getSheet();
+      const rows = actions.map(action => [
+        action.gameKey,
+        action.userId,
+        action.count,
+        action.displayName,
+        action.eventTime,
+      ]);
+
+      // 一次寫入整批列到表尾(持鎖期間 getLastRow 不會被其他執行緒插隊)。
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+      SpreadsheetApp.flush();
+
+      // 記憶體快取失效,避免同執行緒後續讀取拿到舊的。
       SignupStateRepository.stateCache = null;
 
-      const sheet = SignupStateRepository.getSheet();
-      const cache = SignupStateRepository.getCache();
       const affectedGameKeys = {};
-
-      actions.forEach(action => {
-        const cacheKey = SignupStateRepository.getCacheKey(action.gameKey, action.userId);
-        const eventMs = SignupStateRepository.toMs(action.eventTime);
-        const existing = cache[cacheKey];
-
-        affectedGameKeys[action.gameKey] = true;
-
-        if (existing) {
-          // 較舊的事件(晚到的早點擊)不覆蓋較新的結果。
-          if (SignupStateRepository.toMs(existing.updatedAt) > eventMs) {
-            return;
-          }
-
-          sheet.getRange(existing.rowNumber, 3, 1, 3)
-            .setValues([[action.count, action.displayName, action.eventTime]]);
-
-          existing.count = action.count;
-          existing.displayName = action.displayName;
-          existing.updatedAt = action.eventTime;
-
-          return;
-        }
-
-        sheet.appendRow([action.gameKey, action.userId, action.count, action.displayName, action.eventTime]);
-
-        // 同執行緒後續事件靠這份記憶體 cache 命中,不重讀 sheet。
-        cache[cacheKey] = {
-          gameKey: action.gameKey,
-          userId: action.userId,
-          count: action.count,
-          displayName: action.displayName,
-          updatedAt: action.eventTime,
-          rowNumber: sheet.getLastRow(),
-        };
-      });
-
-      // 確保所有寫入在放鎖前落地,下一個持鎖者重讀才看得到。
-      SpreadsheetApp.flush();
+      actions.forEach(action => { affectedGameKeys[action.gameKey] = true; });
 
       return Object.keys(affectedGameKeys);
     } finally {
@@ -146,7 +119,8 @@ const SignupStateRepository = {
     }
   },
 
-  // 取得某場所有 count>0 的報名(由多到少排序)。
+  // 取得某場所有 count>0 的報名。count 來自「每人事件時間最新的那一列」(見 getCache 聚合),
+  // 由多到少排序。
   findByGameKey: (gameKey) => {
     const cache = SignupStateRepository.getCache();
 

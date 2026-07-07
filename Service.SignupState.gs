@@ -3,8 +3,8 @@
 //   讀取:getSummary 供 stats API 與統計推播共用,兩邊數字永遠一致。
 const SignupStateService = {
   // 處理一個 webhook request 內的所有事件(LINE 會把多筆點擊打包在同一 request)。
-  // 先在鎖外把每筆按鈕報名解析成 action(含顯示名稱),再一次批次寫入,
-  // 避免逐筆寫入時同執行緒 read-after-write 讀不到剛 append 的列而產生重複。
+  // 每筆按鈕報名各解析成一個 action,顯示名稱在鎖外先解析好,再純 append 寫入
+  // (每個事件一列,不合併、不覆蓋);聚合由讀取端處理。
   // 任何例外都只記錄不外拋,避免影響 webhook 回應(資料仍已寫入 ReceiveLog)。
   recordEvents: (events) => {
     try {
@@ -44,7 +44,7 @@ const SignupStateService = {
         return;
       }
 
-      const affectedGameKeys = SignupStateRepository.applyBatch(actions);
+      const affectedGameKeys = SignupStateRepository.appendActions(actions);
 
       // 有異動的場次清快取,讓下次讀取立即反映。
       affectedGameKeys.forEach(gameKey => StatsApiService.invalidate(gameKey));
