@@ -2,6 +2,26 @@
 
 Google Apps Script LINE bot for basketball signup reminders and statistics.
 
+## Signup Flow
+
+Signup is **click-based**. The weekly reminder pushes a Flex message with
+buttons (via `SignupFlexMessage`); tapping a button fires a LINE `postback`
+event carrying `action=signup&count=N` (`N` = 0–3, where `0` means cancel).
+
+- **Only clicks are counted.** `SignupEventParser.parseAction` parses `postback`
+  events only. Plain-text (`+1`, `-2`) and sticker messages are still received
+  and logged, but are **not** included in the statistics.
+- **Last click wins.** A button click is an absolute count (`SignupAction.set`),
+  so `SignupCounter` overwrites the user's previous count rather than adding to
+  it — tapping repeatedly is safe, only the latest tap counts.
+- **Silent.** Clicks are recorded without any reply in the group. Use `/統計`
+  (or the scheduled result push) to see the current tally.
+
+The text/sticker parsing methods (`actionFromText`, `parseDelta`,
+`stickerToDeltaSymbol`) are kept in `SignupEventParser` but intentionally not
+wired into `actionFromEvent`. To re-enable text signup, add the dispatch back in
+`actionFromEvent`.
+
 ## Environment Variables
 
 Sensitive config lives in local `.env` and Google Apps Script **Script Properties**.

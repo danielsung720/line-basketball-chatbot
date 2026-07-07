@@ -1,4 +1,5 @@
 const SignupCounter = {
+  // 文字 / 貼圖單次相對增減的上限,超過視為誤植而略過。
   MAX_SIGNUP_DELTA: 3,
 
   count: (receiveLogs, range) => {
@@ -9,49 +10,44 @@ const SignupCounter = {
     const matchedLogs = [];
     const ignoredLogs = [];
 
+    // ReceiveLog 由舊到新逐列套用;因 SET 會覆蓋,自然達成「以最後一次點擊為準」。
     receiveLogs.forEach(receiveLog => {
       const logTime = receiveLog.date;
       const groupId = receiveLog.groupId;
       const userId = receiveLog.userId;
-      const text = SignupEventParser.parseText(receiveLog.log);
+      const action = SignupEventParser.parseAction(receiveLog.log);
 
-      if (!text) {
+      if (!action) {
         return;
       }
 
-      const delta = SignupEventParser.parseDelta(text);
+      const current = userSignupMap.get(userId) || 0;
+      const outcome = SignupCounter.applyAction(current, action);
 
-      if (delta === null) {
-        return;
-      }
-
-      if (Math.abs(delta) > SignupCounter.MAX_SIGNUP_DELTA) {
+      if (outcome.ignored) {
         ignoredLogs.push({
           time: Utilities.formatDate(logTime, timezone, displayDatetimeFormat),
           groupId,
           userId,
-          text,
-          delta,
-          reason: `單次報名異動不可超過 ${SignupCounter.MAX_SIGNUP_DELTA}`,
+          kind: action.kind,
+          value: action.value,
+          reason: outcome.reason,
         });
 
         return;
       }
 
-      const current = userSignupMap.get(userId) || 0;
-      const next = Math.max(0, current + delta);
-
-      userSignupMap.set(userId, next);
+      userSignupMap.set(userId, outcome.next);
       userGroupMap.set(userId, groupId);
 
       matchedLogs.push({
         time: Utilities.formatDate(logTime, timezone, displayDatetimeFormat),
         groupId,
         userId,
-        text,
-        delta,
+        kind: action.kind,
+        value: action.value,
         before: current,
-        after: next,
+        after: outcome.next,
       });
     });
 
@@ -63,5 +59,23 @@ const SignupCounter = {
       logs: matchedLogs,
       ignoredLogs,
     };
+  },
+
+  // 依動作型別計算套用後的人數。回傳 { next } 或 { ignored: true, reason }。
+  applyAction: (current, action) => {
+    if (action.kind === SIGNUP_ACTION_SET) {
+      // 按鈕點擊:直接覆蓋為絕對人數(已在解析層限制 0~MAX)。
+      return { next: Math.max(0, action.value), ignored: false };
+    }
+
+    // 相對增減(文字 / 貼圖)。
+    if (Math.abs(action.value) > SignupCounter.MAX_SIGNUP_DELTA) {
+      return {
+        ignored: true,
+        reason: `單次報名異動不可超過 ${SignupCounter.MAX_SIGNUP_DELTA}`,
+      };
+    }
+
+    return { next: Math.max(0, current + action.value), ignored: false };
   },
 };

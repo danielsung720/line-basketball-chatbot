@@ -1,8 +1,8 @@
 const BasketballNotificationService = {
   pushReminder: (now = new Date()) => {
     if (BasketballNotificationService.shouldPushReminder(now)) {
-      const message = '明天又是週三打球日囉🏀\n請要出席的人幫我喊+1❤️\n(人數統計請用文字訊息 +, +1, ++, +數字, -, --, -數字,  貼圖(+1類型)，其餘資訊不統計)';
-      LineClient.sendTextMsg(message);
+      // 主要用點擊報名(Flex 按鈕);文字 +1 / 貼圖 仍可報名,故一併附上說明。
+      LineClient.sendFlexMsg(SignupFlexMessage.build());
 
       return;
     }

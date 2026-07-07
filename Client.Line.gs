@@ -1,13 +1,27 @@
 const LineClient = {
   sendTextMsg: (message, groupId = LINE_GROUP_ID) => {
+    const messages = [
+      {
+        type: 'text',
+        text: message,
+      },
+    ];
+
+    LineClient.push('sendTextMsg', messages, groupId);
+  },
+
+  // 發送 Flex 訊息。flexMessage 需符合 LINE Flex message 物件格式
+  // (type: 'flex', altText, contents),通常由 SignupFlexMessage.build() 產生。
+  sendFlexMsg: (flexMessage, groupId = LINE_GROUP_ID) => {
+    LineClient.push('sendFlexMsg', [flexMessage], groupId);
+  },
+
+  // 共用的 push 送出邏輯:組 payload、呼叫 LINE push API、寫 SendLog。
+  // action 僅作為 SendLog 的動作標記,方便日後追查是哪個入口送的。
+  push: (action, messages, groupId) => {
     const payload = {
       to: groupId,
-      messages: [
-        {
-          type: 'text',
-          text: message
-        }
-      ]
+      messages,
     };
 
     try {
@@ -27,7 +41,7 @@ const LineClient = {
       Logger.log('LINE 回應內容: ' + text);
 
       SheetLogRepository.writeSendLog(groupId, MESSAGE_TYPE_LINE, {
-        action: 'sendTextMsg',
+        action,
         request: payload,
         responseCode: code,
         responseBody: text,
@@ -36,7 +50,7 @@ const LineClient = {
       Logger.log('發送 LINE 訊息時發生錯誤: ' + e.message);
 
       SheetLogRepository.writeSendLog(groupId, MESSAGE_TYPE_LINE, {
-        action: 'sendTextMsg',
+        action,
         request: payload,
         error: e.message,
       });
