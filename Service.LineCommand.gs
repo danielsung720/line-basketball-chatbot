@@ -7,11 +7,6 @@ const LineCommandService = {
     //   LineClient.sendTextMsg(geminiReplyText, groupId);
     // }
 
-    // 監聽 /統計
-    if (text == '/統計') {
-      const result = SignupService.countSignup({endTime: new Date()});
-      const message = SignupService.formatSignupSummary(result);
-      LineClient.sendTextMsg(message, groupId);
-    }
+    // 目前沒有需要即時回應的文字指令(/統計 已移除,改由排程推送統計結果)。
   },
 };
