@@ -1,8 +1,12 @@
 // 建構「點擊報名」的 Flex 訊息。按鈕以 postback 觸發,data 形如 action=signup&count=N,
 // 由 SignupEventParser.actionFromPostback 解析成 SignupAction.set(N)。
-// 依需求:點擊不回覆訊息(不設 displayText),且以最後一次點擊為準(SET 覆蓋語意)。
+// 點擊帶 displayText 回顯選擇,且以最後一次點擊為準(SET 覆蓋語意)。
+// footer 放一顆連到報名名單網頁的連結按鈕。
 const SignupFlexMessage = {
   ALT_TEXT: '🏀 週三打球日報名',
+
+  // 報名名單靜態網頁(GitHub Pages)
+  STATS_WEB_URL: 'https://danielsung720.github.io/basketball-signup-web/',
 
   build: () => {
     return {
@@ -37,6 +41,22 @@ const SignupFlexMessage = {
           SignupFlexMessage.signupButton('報名 2 人', 2, 'primary'),
           SignupFlexMessage.signupButton('報名 3 人', 3, 'primary'),
           SignupFlexMessage.signupButton('取消報名', 0, 'secondary'),
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'button',
+            style: 'link',
+            height: 'sm',
+            action: {
+              type: 'uri',
+              label: '📋 查看報名名單',
+              uri: SignupFlexMessage.STATS_WEB_URL,
+            },
+          },
         ],
       },
     };
