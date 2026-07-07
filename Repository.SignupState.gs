@@ -54,36 +54,54 @@ const SignupStateRepository = {
     return cache;
   },
 
+  // 取得鎖等待毫秒數。webhook 併發時序列化「讀→改→寫」,避免連點造成重複列/覆寫遺失。
+  LOCK_WAIT_MS: 15000,
+
   // 覆蓋寫入某使用者在某場的報名人數(count 可為 0 表示取消)。
+  // 以 LockService 序列化:同一時間只有一個執行緒能進行讀改寫,解決併發 race condition。
   upsert: (gameKey, userId, count, displayName) => {
-    const sheet = SignupStateRepository.getSheet();
-    const cache = SignupStateRepository.getCache();
-    const cacheKey = SignupStateRepository.getCacheKey(gameKey, userId);
-    const now = new Date();
-    const existing = cache[cacheKey];
+    const lock = LockService.getScriptLock();
+    lock.waitLock(SignupStateRepository.LOCK_WAIT_MS);
 
-    if (existing) {
-      sheet.getRange(existing.rowNumber, 3, 1, 3).setValues([[count, displayName, now]]);
+    try {
+      // 進鎖後強制重讀,才能看到剛被其他執行緒寫入的列,避免重複 append。
+      SignupStateRepository.stateCache = null;
 
-      existing.count = count;
-      existing.displayName = displayName;
+      const sheet = SignupStateRepository.getSheet();
+      const cache = SignupStateRepository.getCache();
+      const cacheKey = SignupStateRepository.getCacheKey(gameKey, userId);
+      const now = new Date();
+      const existing = cache[cacheKey];
 
-      return existing;
+      let record;
+
+      if (existing) {
+        sheet.getRange(existing.rowNumber, 3, 1, 3).setValues([[count, displayName, now]]);
+
+        existing.count = count;
+        existing.displayName = displayName;
+        record = existing;
+      } else {
+        sheet.appendRow([gameKey, userId, count, displayName, now]);
+
+        record = {
+          gameKey,
+          userId,
+          count,
+          displayName,
+          rowNumber: sheet.getLastRow(),
+        };
+
+        cache[cacheKey] = record;
+      }
+
+      // 確保寫入在放鎖前落地,下一個持鎖者重讀才看得到。
+      SpreadsheetApp.flush();
+
+      return record;
+    } finally {
+      lock.releaseLock();
     }
-
-    sheet.appendRow([gameKey, userId, count, displayName, now]);
-
-    const record = {
-      gameKey,
-      userId,
-      count,
-      displayName,
-      rowNumber: sheet.getLastRow(),
-    };
-
-    cache[cacheKey] = record;
-
-    return record;
   },
 
   // 取得某場所有 count>0 的報名(由多到少排序)。

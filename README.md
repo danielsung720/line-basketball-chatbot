@@ -23,6 +23,16 @@ scans `ReceiveLog` at read time.
   safe, only the latest tap counts (`count = 0` removes them).
 - **Silent.** Clicks are recorded without any reply in the group; the tap only
   echoes the user's own choice via the button's `displayText`.
+- **Concurrency-safe (important).** Apps Script `doPost` invocations run
+  concurrently, so rapid taps can fire overlapping webhooks. Without guarding,
+  two executions both read "no row yet" and each append — producing duplicate
+  rows / a wrong total. `SignupStateRepository.upsert` therefore wraps the
+  read-modify-write in a **`LockService` script lock**: it `waitLock`s, clears
+  the in-memory cache to force a fresh read inside the lock (so it sees rows a
+  competing execution just wrote), writes, `SpreadsheetApp.flush()`es, then
+  releases. Reads (`getSummary`) are not locked. Do **not** replace this with a
+  fixed delay — a delay only lowers the collision odds, it does not serialize
+  the writes.
 
 Notes:
 - The text/sticker parsers (`actionFromText`, `parseDelta`,
