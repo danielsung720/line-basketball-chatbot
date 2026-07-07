@@ -40,6 +40,16 @@ const SignupStateRepository = {
     return isNaN(date.getTime()) ? 0 : date.getTime();
   },
 
+  // 正規化 game_key。Google Sheets 會把 "2026-07-08" 自動存成日期格,讀回來是 Date 物件,
+  // 與 GamePolicy 產生的字串 key 比對不上;統一轉回 yyyy-MM-dd 字串。
+  normalizeGameKey: (value) => {
+    if (value instanceof Date) {
+      return Utilities.formatDate(value, GamePolicy.TIMEZONE, 'yyyy-MM-dd');
+    }
+
+    return String(value).trim();
+  },
+
   getCache: () => {
     if (SignupStateRepository.stateCache !== null) {
       return SignupStateRepository.stateCache;
@@ -50,7 +60,7 @@ const SignupStateRepository = {
     const cache = {};
 
     values.slice(1).forEach((row, index) => {
-      const gameKey = row[0];
+      const gameKey = SignupStateRepository.normalizeGameKey(row[0]);
       const userId = row[1];
 
       if (!gameKey || !userId) {
