@@ -137,7 +137,7 @@ GitHub Actions deploys the code to Apps Script via [clasp](https://github.com/go
 
 | Workflow | Trigger | Action |
 | --- | --- | --- |
-| `.github/workflows/deploy.yml` | push to `master`, or manual (`workflow_dispatch`) | `clasp push --force` — updates the live HEAD code (the Web App `/exec` URL serves the latest code; no versioned deployment) |
+| `.github/workflows/deploy.yml` | push to `master`, or manual (`workflow_dispatch`) | `clasp push --force` then `clasp deploy -i <fixed deployment>` — updates a **fixed** Web App deployment to a new version, so its `/exec` URL never changes yet always serves the latest code (a versioned deployment is NOT auto-updated by `clasp push` alone) |
 | `.github/workflows/ci.yml` | pull request to `master` | `.gs` syntax check + `appsscript.json` JSON validation |
 
 `.claspignore` limits the push to `*.gs` and `appsscript.json` so local files (`.env`, docs, etc.) are never uploaded.
@@ -161,7 +161,7 @@ Notes:
 - **clasp version must match your credential format.** The workflow pins `@google/clasp@3.3.0` (v3 stores `~/.clasprc.json` as `{ "tokens": { "default": ... } }`). A v2 clasp cannot read v3 credentials.
 - **`.clasp.json` is git-ignored** — it binds a personal script ID. CI regenerates it from the `SCRIPT_ID` secret at deploy time.
 - **Credentials expire.** If you re-run `clasp login` locally, refresh the secret: `gh secret set CLASPRC_JSON < ~/.clasprc.json`.
-- **`@HEAD` deployment assumed.** Because CI only runs `clasp push`, the Web App deployment must target `@HEAD` for `/exec` to reflect the latest code. Switching to a fixed version would require adding `clasp deploy`.
+- **Fixed deployment, auto-versioned.** The webhook and stats web page point at one fixed deployment ID whose `/exec` URL never changes. CI runs `clasp deploy -i <that id>` after every push so that deployment always serves the latest code. Do **not** switch consumers to the `@HEAD` deployment — its `/exec` requires Google login (not anonymous) and is unusable for the LINE webhook / public page. The fixed deployment's ID is hard-coded in `deploy.yml`; if it is ever recreated, update that line.
 
 ## Sheets
 

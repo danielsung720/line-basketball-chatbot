@@ -47,3 +47,8 @@ jobs:
 
       - name: Push to Apps Script
         run: clasp push --force
+
+      # 把固定的 Web App 部署更新到最新版本,讓 webhook/網頁的網址永遠不變、
+      # 又總是服務最新程式碼(版本化部署不會被 clasp push 自動更新,需明確 deploy)。
+      - name: Redeploy fixed web app deployment
+        run: clasp deploy -i AKfycbwOJY0pkh927RBaNUySRXP-h_jqqX87BX3d9zIsJLo63gjeazYnsOEnlGmaXzATIuC8 -d "auto ${{ github.sha }}"
