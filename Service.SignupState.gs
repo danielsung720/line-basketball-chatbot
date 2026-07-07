@@ -13,11 +13,12 @@ const SignupStateService = {
         return;
       }
 
-      const eventTime = event.timestamp ? new Date(event.timestamp) : new Date();
+      const eventTime = event.timestamp ? new Date(Number(event.timestamp)) : new Date();
       const gameKey = GamePolicy.gameKeyForDate(eventTime);
       const displayName = SignupStateService.resolveDisplayName(userId, groupId);
 
-      SignupStateRepository.upsert(gameKey, userId, action.value, displayName);
+      // 傳入事件時間,讓 repository 以「最後一次點擊為準」覆蓋(與處理順序無關)。
+      SignupStateRepository.upsert(gameKey, userId, action.value, displayName, eventTime);
 
       // 報名有異動,清掉該場的統計快取,讓下次讀取立即反映。
       StatsApiService.invalidate(gameKey);
