@@ -6,8 +6,8 @@ const LineWebhookService = {
       return ContentService.createTextOutput('Unauthorized');
     }
 
-    let groupId = '-';
-    let userId = '-';
+    let logGroupId = '-';
+    let logUserId = '-';
 
     try {
       const contents = JSON.parse(e.postData.contents);
@@ -17,25 +17,47 @@ const LineWebhookService = {
         return ContentService.createTextOutput('No events');
       }
 
-      const event = events[0];
+      // LINE 一個 request 可能夾帶多筆事件(連點時尤其如此),必須逐一處理,
+      // 不能只看 events[0],否則同批的其餘點擊會被丟掉。
+      // ReceiveLog 以第一筆群組事件的 ids 標記,整包 contents 存一次(稽核用途)。
+      const firstGroupEvent = events.find(ev => ev.source && ev.source.type === 'group');
 
-      if (event.source && event.source.type === 'group') {
-        groupId = event.source.groupId || '-';
-        userId = event.source.userId || '-';
-        SheetLogRepository.writeReceiveLog(groupId, userId, JSON.stringify(contents));
-
-        if (LineWebhookService.isTextMessageEvent(event)) {
-          LineCommandService.handleTextMessage(event.message.text, groupId);
-        } else if (event.type === 'postback') {
-          // 點擊報名:即時更新聚合狀態(SignupState),供統計與網頁直接讀取。
-          SignupStateService.recordPostback(event, groupId, userId);
-        }
+      if (firstGroupEvent) {
+        logGroupId = firstGroupEvent.source.groupId || '-';
+        logUserId = firstGroupEvent.source.userId || '-';
+        SheetLogRepository.writeReceiveLog(logGroupId, logUserId, JSON.stringify(contents));
       }
+
+      events.forEach(event => {
+        try {
+          LineWebhookService.handleEvent(event);
+        } catch (err) {
+          // 單筆事件失敗不影響同批其餘事件。
+          Logger.log('處理事件失敗: ' + err.message);
+        }
+      });
     } catch (err) {
-      SheetLogRepository.writeReceiveLog(groupId, userId, 'error:' + err.message);
+      SheetLogRepository.writeReceiveLog(logGroupId, logUserId, 'error:' + err.message);
     }
 
     return ContentService.createTextOutput('OK');
+  },
+
+  // 處理單一事件(僅限群組)。
+  handleEvent: (event) => {
+    if (!event.source || event.source.type !== 'group') {
+      return;
+    }
+
+    const groupId = event.source.groupId || '-';
+    const userId = event.source.userId || '-';
+
+    if (LineWebhookService.isTextMessageEvent(event)) {
+      LineCommandService.handleTextMessage(event.message.text, groupId);
+    } else if (event.type === 'postback') {
+      // 點擊報名:即時更新聚合狀態(SignupState),供統計與網頁直接讀取。
+      SignupStateService.recordPostback(event, groupId, userId);
+    }
   },
 
   isTextMessageEvent: (event) => {
