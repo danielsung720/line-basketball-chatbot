@@ -8,19 +8,29 @@ Signup is **click-based**. The weekly reminder pushes a Flex message with
 buttons (via `SignupFlexMessage`); tapping a button fires a LINE `postback`
 event carrying `action=signup&count=N` (`N` = 0–3, where `0` means cancel).
 
-- **Only clicks are counted.** `SignupEventParser.parseAction` parses `postback`
-  events only. Plain-text (`+1`, `-2`) and sticker messages are still received
-  and logged, but are **not** included in the statistics.
-- **Last click wins.** A button click is an absolute count (`SignupAction.set`),
-  so `SignupCounter` overwrites the user's previous count rather than adding to
-  it — tapping repeatedly is safe, only the latest tap counts.
-- **Silent.** Clicks are recorded without any reply in the group. Use `/統計`
-  (or the scheduled result push) to see the current tally.
+**Real-time aggregation (single source of truth).** When a `postback` arrives,
+`SignupStateService.recordPostback` immediately upserts the tally into the
+`SignupState` sheet, keyed by `game_key` (that week's Wednesday date). Both the
+Stats API and the scheduled result push read from `SignupState` via
+`SignupStateService.getSummary`, so their numbers always match and neither
+scans `ReceiveLog` at read time.
 
-The text/sticker parsing methods (`actionFromText`, `parseDelta`,
-`stickerToDeltaSymbol`) are kept in `SignupEventParser` but intentionally not
-wired into `actionFromEvent`. To re-enable text signup, add the dispatch back in
-`actionFromEvent`.
+- **Only clicks are counted.** `SignupEventParser.actionFromEvent` parses
+  `postback` events only. Plain-text (`+1`) and sticker messages are still
+  logged to `ReceiveLog` but are **not** aggregated.
+- **Last click wins.** A button click is an absolute count (`SignupAction.set`),
+  so the upsert overwrites the user's previous count — tapping repeatedly is
+  safe, only the latest tap counts (`count = 0` removes them).
+- **Silent.** Clicks are recorded without any reply in the group; the tap only
+  echoes the user's own choice via the button's `displayText`.
+
+Notes:
+- The text/sticker parsers (`actionFromText`, `parseDelta`,
+  `stickerToDeltaSymbol`) remain in `SignupEventParser` but are not wired into
+  `actionFromEvent`. Re-add the dispatch there to re-enable text signup.
+- The `ReceiveLog`-scanning pipeline (`SignupService` / `SignupCounter` /
+  `SignupWindowPolicy`) is no longer on any live path. It is kept for auditing
+  and for backfilling `SignupState` from history if ever needed.
 
 ## Stats API (read-only GET)
 
@@ -36,7 +46,7 @@ Query parameters (all optional):
 
 | Param | Purpose |
 | --- | --- |
-| `startTime`, `endTime`, `now` | Override the signup window (defaults come from `SignupWindowPolicy`). |
+| `startTime`, `now` | Time anchor for **which game** to read — its week's Wednesday becomes the `game_key`. Both omitted → uses the current time. `endTime` is no longer used. |
 | `callback` | If present, the response is returned as JSONP (`application/javascript`) to bypass browser CORS. |
 
 Response (`application/json`), success/failure is expressed via `ok`
@@ -166,3 +176,11 @@ Notes:
 | group_id | user_id | name | updated_at | deleted_at |
 
 Rows with `deleted_at` are ignored and treated as cache misses.
+
+`SignupState` is the real-time signup aggregate — one row per `(game_key, user_id)`, upserted on each `postback`:
+
+| A | B | C | D | E |
+| --- | --- | --- | --- | --- |
+| game_key | user_id | count | display_name | updated_at |
+
+`game_key` is that week's Wednesday date (`yyyy-MM-dd`). Both the Stats API and the scheduled push read this sheet, so they never scan `ReceiveLog` at read time. Created automatically with the header above if missing.

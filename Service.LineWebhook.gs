@@ -26,6 +26,9 @@ const LineWebhookService = {
 
         if (LineWebhookService.isTextMessageEvent(event)) {
           LineCommandService.handleTextMessage(event.message.text, groupId);
+        } else if (event.type === 'postback') {
+          // 點擊報名:即時更新聚合狀態(SignupState),供統計與網頁直接讀取。
+          SignupStateService.recordPostback(event, groupId, userId);
         }
       }
     } catch (err) {

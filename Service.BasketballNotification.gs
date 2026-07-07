@@ -15,9 +15,11 @@ const BasketballNotificationService = {
     });
   },
 
-  pushSignupResult: () => {
-    const result = SignupService.countSignup({endTime: new Date()});
-    const message = SignupService.formatSignupSummary(result);
+  pushSignupResult: (now = new Date()) => {
+    // 與網頁同源:直接讀即時聚合狀態(SignupState)當前這一場。
+    const gameKey = GamePolicy.gameKeyForDate(now);
+    const summary = SignupStateService.getSummary(gameKey);
+    const message = SignupSummaryFormatter.format(summary);
 
     LineClient.sendTextMsg(message);
   },
