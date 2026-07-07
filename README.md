@@ -22,6 +22,47 @@ The text/sticker parsing methods (`actionFromText`, `parseDelta`,
 wired into `actionFromEvent`. To re-enable text signup, add the dispatch back in
 `actionFromEvent`.
 
+## Stats API (read-only GET)
+
+An external web page can read the current signup tally via the Web App
+`doGet` endpoint. It is public and unauthenticated — the response exposes
+only nicknames and counts, which are already visible in the group.
+
+```
+GET /exec?action=stats
+```
+
+Query parameters (all optional):
+
+| Param | Purpose |
+| --- | --- |
+| `startTime`, `endTime`, `now` | Override the signup window (defaults come from `SignupWindowPolicy`). |
+| `callback` | If present, the response is returned as JSONP (`application/javascript`) to bypass browser CORS. |
+
+Response (`application/json`), success/failure is expressed via `ok`
+because Apps Script always returns HTTP 200 and cannot set headers:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "startTime": "2026-07-06 10:00",
+    "endTime": "2026-07-07 17:00",
+    "total": 8,
+    "attendees": [
+      { "displayName": "小明", "count": 2 }
+    ]
+  }
+}
+```
+
+Only `displayName` and `count` are exposed — LINE `userId` and internal
+logs are not returned. Because Apps Script `doGet` cannot set CORS
+headers, client-side JavaScript should use the `callback` (JSONP) form;
+server-side callers can read the plain JSON directly. The endpoint runs
+the same statistics pipeline as the scheduled push, so it reflects
+click-based signups only.
+
 ## Environment Variables
 
 Sensitive config lives in local `.env` and Google Apps Script **Script Properties**.
