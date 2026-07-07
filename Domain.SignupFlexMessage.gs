@@ -50,8 +50,10 @@ const SignupFlexMessage = {
       action: {
         type: 'postback',
         label,
-        // 不帶 displayText:點擊只默默記錄,不在群組洗版。
         data: `action=${SignupEventParser.POSTBACK_ACTION}&count=${count}`,
+        // displayText 讓點擊者在群組回顯自己的選擇,作為即時 feedback;
+        // 因採「最後一次點擊為準」,連點也不會重複計數。
+        displayText: count === 0 ? '我要取消報名' : `我報名 ${count} 人`,
       },
     };
   },
