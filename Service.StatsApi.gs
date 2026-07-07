@@ -11,7 +11,7 @@
 // 因此成功/失敗以回應內容的 ok 欄位表達,而非 HTTP 狀態碼。
 const StatsApiService = {
   // 讀取仍有 GAS 平台開銷(冷啟動 + 轉址 + 開表),故仍快取;報名異動會即時清快取
-  // (見 SignupStateService.recordPostback),所以名單既快又不會過期。TTL 只是保底。
+  // (見 SignupStateService.recordEvents),所以名單既快又不會過期。TTL 只是保底。
   CACHE_TTL_SECONDS: 30,
   CACHE_PREFIX: 'stats:',
 

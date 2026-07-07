@@ -78,57 +78,69 @@ const SignupStateRepository = {
     return cache;
   },
 
-  // 覆蓋寫入某使用者在某場的報名人數(count 可為 0 表示取消)。
-  //   以 LockService 序列化,避免併發重複 append;
-  //   以事件時間戳守衛,只有較新的點擊才覆蓋,確保「最後一次點擊為準」與處理順序無關。
-  upsert: (gameKey, userId, count, displayName, eventTime) => {
+  // 批次套用一組報名動作(來自同一個 webhook request 的多筆事件),
+  // 一次鎖、一次讀、記憶體內合併後再寫入,解決:
+  //   1. 同一次執行連續處理一批事件時,append 後同執行緒重讀讀不到 → 重複列;
+  //   2. 跨 request 併發 → 用 LockService 序列化;
+  //   3. 順序錯亂 → 以事件時間戳守衛,同一人只保留最新點擊。
+  // actions: [{ gameKey, userId, count, displayName, eventTime }]
+  // 回傳:受影響的 gameKey 陣列(供清快取)。
+  applyBatch: (actions) => {
+    if (!actions || actions.length === 0) {
+      return [];
+    }
+
     const lock = LockService.getScriptLock();
     lock.waitLock(SignupStateRepository.LOCK_WAIT_MS);
 
     try {
-      // 進鎖後強制重讀,才能看到剛被其他執行緒寫入的列,避免重複 append。
+      // 進鎖後讀一次(強制重讀以看到其他執行緒剛寫入的列),之後同執行緒只靠記憶體 cache。
       SignupStateRepository.stateCache = null;
 
       const sheet = SignupStateRepository.getSheet();
       const cache = SignupStateRepository.getCache();
-      const cacheKey = SignupStateRepository.getCacheKey(gameKey, userId);
-      const eventMs = SignupStateRepository.toMs(eventTime);
-      const existing = cache[cacheKey];
+      const affectedGameKeys = {};
 
-      if (existing) {
-        // 這筆事件比已記錄的還舊(晚到的較早點擊)→ 略過,不覆蓋較新的結果。
-        if (SignupStateRepository.toMs(existing.updatedAt) > eventMs) {
-          return existing;
+      actions.forEach(action => {
+        const cacheKey = SignupStateRepository.getCacheKey(action.gameKey, action.userId);
+        const eventMs = SignupStateRepository.toMs(action.eventTime);
+        const existing = cache[cacheKey];
+
+        affectedGameKeys[action.gameKey] = true;
+
+        if (existing) {
+          // 較舊的事件(晚到的早點擊)不覆蓋較新的結果。
+          if (SignupStateRepository.toMs(existing.updatedAt) > eventMs) {
+            return;
+          }
+
+          sheet.getRange(existing.rowNumber, 3, 1, 3)
+            .setValues([[action.count, action.displayName, action.eventTime]]);
+
+          existing.count = action.count;
+          existing.displayName = action.displayName;
+          existing.updatedAt = action.eventTime;
+
+          return;
         }
 
-        sheet.getRange(existing.rowNumber, 3, 1, 3).setValues([[count, displayName, eventTime]]);
+        sheet.appendRow([action.gameKey, action.userId, action.count, action.displayName, action.eventTime]);
 
-        existing.count = count;
-        existing.displayName = displayName;
-        existing.updatedAt = eventTime;
+        // 同執行緒後續事件靠這份記憶體 cache 命中,不重讀 sheet。
+        cache[cacheKey] = {
+          gameKey: action.gameKey,
+          userId: action.userId,
+          count: action.count,
+          displayName: action.displayName,
+          updatedAt: action.eventTime,
+          rowNumber: sheet.getLastRow(),
+        };
+      });
 
-        SpreadsheetApp.flush();
-
-        return existing;
-      }
-
-      sheet.appendRow([gameKey, userId, count, displayName, eventTime]);
-
-      const record = {
-        gameKey,
-        userId,
-        count,
-        displayName,
-        updatedAt: eventTime,
-        rowNumber: sheet.getLastRow(),
-      };
-
-      cache[cacheKey] = record;
-
-      // 確保寫入在放鎖前落地,下一個持鎖者重讀才看得到。
+      // 確保所有寫入在放鎖前落地,下一個持鎖者重讀才看得到。
       SpreadsheetApp.flush();
 
-      return record;
+      return Object.keys(affectedGameKeys);
     } finally {
       lock.releaseLock();
     }

@@ -28,6 +28,7 @@ const LineWebhookService = {
         SheetLogRepository.writeReceiveLog(logGroupId, logUserId, JSON.stringify(contents));
       }
 
+      // 文字指令逐筆處理。
       events.forEach(event => {
         try {
           LineWebhookService.handleEvent(event);
@@ -36,6 +37,10 @@ const LineWebhookService = {
           Logger.log('處理事件失敗: ' + err.message);
         }
       });
+
+      // 報名點擊(postback)整批一起處理:一次鎖、一次讀、記憶體合併後寫入,
+      // 避免同一 request 內多筆點擊各自 append 造成重複列。
+      SignupStateService.recordEvents(events);
     } catch (err) {
       SheetLogRepository.writeReceiveLog(logGroupId, logUserId, 'error:' + err.message);
     }
@@ -43,20 +48,14 @@ const LineWebhookService = {
     return ContentService.createTextOutput('OK');
   },
 
-  // 處理單一事件(僅限群組)。
+  // 處理單一事件的文字指令(僅限群組)。postback 報名改由 recordEvents 批次處理。
   handleEvent: (event) => {
     if (!event.source || event.source.type !== 'group') {
       return;
     }
 
-    const groupId = event.source.groupId || '-';
-    const userId = event.source.userId || '-';
-
     if (LineWebhookService.isTextMessageEvent(event)) {
-      LineCommandService.handleTextMessage(event.message.text, groupId);
-    } else if (event.type === 'postback') {
-      // 點擊報名:即時更新聚合狀態(SignupState),供統計與網頁直接讀取。
-      SignupStateService.recordPostback(event, groupId, userId);
+      LineCommandService.handleTextMessage(event.message.text, event.source.groupId);
     }
   },
 

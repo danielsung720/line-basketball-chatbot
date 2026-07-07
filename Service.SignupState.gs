@@ -1,29 +1,55 @@
 // 即時報名聚合的應用服務。
-//   寫入:webhook 收到 postback 時 recordPostback,直接更新 SignupState 並清該場快取。
+//   寫入:webhook 收到事件時 recordEvents 批次更新 SignupState 並清該場快取。
 //   讀取:getSummary 供 stats API 與統計推播共用,兩邊數字永遠一致。
 const SignupStateService = {
-  // 處理一則 postback 報名事件:算出所屬球局、覆蓋人數、解析顯示名稱。
+  // 處理一個 webhook request 內的所有事件(LINE 會把多筆點擊打包在同一 request)。
+  // 先在鎖外把每筆按鈕報名解析成 action(含顯示名稱),再一次批次寫入,
+  // 避免逐筆寫入時同執行緒 read-after-write 讀不到剛 append 的列而產生重複。
   // 任何例外都只記錄不外拋,避免影響 webhook 回應(資料仍已寫入 ReceiveLog)。
-  recordPostback: (event, groupId, userId) => {
+  recordEvents: (events) => {
     try {
-      const action = SignupEventParser.actionFromEvent(event);
+      const actions = [];
 
-      // 只處理按鈕報名(SET);其他事件忽略。
-      if (!action || action.kind !== SIGNUP_ACTION_SET) {
+      (events || []).forEach(event => {
+        if (!event || !event.source || event.source.type !== 'group') {
+          return;
+        }
+
+        if (event.type !== 'postback') {
+          return;
+        }
+
+        const action = SignupEventParser.actionFromEvent(event);
+
+        // 只處理按鈕報名(SET);其他 postback 忽略。
+        if (!action || action.kind !== SIGNUP_ACTION_SET) {
+          return;
+        }
+
+        const userId = event.source.userId || '-';
+        const groupId = event.source.groupId || '-';
+        const eventTime = event.timestamp ? new Date(Number(event.timestamp)) : new Date();
+
+        actions.push({
+          gameKey: GamePolicy.gameKeyForDate(eventTime),
+          userId,
+          count: action.value,
+          // 顯示名稱在鎖外先解析好(可能讀 Users/LINE API),不佔用寫入鎖。
+          displayName: SignupStateService.resolveDisplayName(userId, groupId),
+          eventTime,
+        });
+      });
+
+      if (actions.length === 0) {
         return;
       }
 
-      const eventTime = event.timestamp ? new Date(Number(event.timestamp)) : new Date();
-      const gameKey = GamePolicy.gameKeyForDate(eventTime);
-      const displayName = SignupStateService.resolveDisplayName(userId, groupId);
+      const affectedGameKeys = SignupStateRepository.applyBatch(actions);
 
-      // 傳入事件時間,讓 repository 以「最後一次點擊為準」覆蓋(與處理順序無關)。
-      SignupStateRepository.upsert(gameKey, userId, action.value, displayName, eventTime);
-
-      // 報名有異動,清掉該場的統計快取,讓下次讀取立即反映。
-      StatsApiService.invalidate(gameKey);
+      // 有異動的場次清快取,讓下次讀取立即反映。
+      affectedGameKeys.forEach(gameKey => StatsApiService.invalidate(gameKey));
     } catch (err) {
-      Logger.log(`更新 SignupState 失敗(${userId}):${err.message}`);
+      Logger.log('更新 SignupState 失敗: ' + err.message);
     }
   },
 
